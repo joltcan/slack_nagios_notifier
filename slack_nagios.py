@@ -1,3 +1,10 @@
+
+import time
+import json
+import os
+
+from dotenv import load_dotenv
+
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_bolt.adapter.flask import SlackRequestHandler
@@ -12,12 +19,11 @@ from gevent.pywsgi import WSGIServer
 # setup flask for non-slack routes
 from flask import Flask, make_response, request
 
-import time
-import json
-import os
+load_dotenv()
 
-SLACK_BOT_TOKEN = os.environ['SLACK_BOT_TOKEN']
-SLACK_APP_TOKEN = os.environ['SLACK_APP_TOKEN']
+SLACK_BOT_TOKEN = os.getenv('SLACK_BOT_TOKEN')
+SLACK_APP_TOKEN = os.getenv('SLACK_APP_TOKEN')
+debug = os.getenv('DEBUG')
 
 problems_file = 'problems.json'
 nagios_cmdfile = "/var/lib/nagios4/rw/nagios.cmd"
@@ -31,7 +37,7 @@ socket_mode_handler = SocketModeHandler(app, SLACK_APP_TOKEN)
 
 def alert_message(data):
     state = data['state']
-    
+
     # use the bootstrap palette
     # https://www.color-hex.com/color-palette/5452
     if state == "CRITICAL" or state == 'DOWN':
@@ -236,11 +242,11 @@ def slack_events():
                 message = app.client.chat_postMessage(channel=data['channel'], attachments=alert_message(data), text=" ")
             else:
                 is_cached = True
-        
+
         if is_cached: 
             #print("sending cached ack for %s" % data['type'] )
             message = app.client.chat_postMessage(channel=data['channel'], attachments=ack_message(data), text=" ")
-       
+
         # send a separate recovery message for visibility
         if data['type'] == 'RECOVERY':
             message = app.client.chat_postMessage(channel=data['channel'], attachments=alert_message(data), text=" ")
@@ -251,7 +257,7 @@ def slack_events():
 if __name__ == "__main__":
     socket_mode_handler.connect()  # does not block the current thread
     # Debug/Development
-    if 'DEBUG' in os.environ:
+    if debug:
         flask_app.run(port=5005, debug=True)
     else:
         print("Starting webserver.")
