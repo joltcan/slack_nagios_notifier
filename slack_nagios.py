@@ -1,7 +1,12 @@
+import logging
+import sys
+import os
 
 import time
 import json
 import os
+import threading
+import math
 
 from dotenv import load_dotenv
 
@@ -20,10 +25,15 @@ from gevent.pywsgi import WSGIServer
 from flask import Flask, make_response, request
 
 load_dotenv()
-
 SLACK_BOT_TOKEN = os.getenv('SLACK_BOT_TOKEN')
 SLACK_APP_TOKEN = os.getenv('SLACK_APP_TOKEN')
-debug = os.getenv('DEBUG')
+
+log_level = logging.DEBUG if os.getenv("DEBUG", "").lower() == "true" else logging.INFO
+logging.basicConfig(
+    level=log_level,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
 
 problems_file = 'problems.json'
 nagios_cmdfile = "/var/lib/nagios4/rw/nagios.cmd"
@@ -128,11 +138,11 @@ def ack_message_handler(body, ack, say, payload):
     if 'ACKNOWLEDGE_SVC_PROBLEM' in payload['value']:
         alertresp = "Service Problem notification for %s on %s" % (payload['value'].split(';')[1], payload['value'].split(';')[2])
         print("[%d] %s;2;1;0;%s;%s acknowledged via %s.\n" % (time.time(), payload['value'], body['user']['username'], body['user']['username'], body['channel']['name'] ), file=cmdfile)
-        print("[%d] %s;2;1;0;%s;%s acknowledged via #%s.\n" % (time.time(), payload['value'], body['user']['username'], body['user']['username'],body['channel']['name'] ))
+        logging.info("[%d] %s;2;1;0;%s;%s acknowledged via #%s", time.time(), payload['value'], body['user']['username'], body['user']['username'],body['channel']['name'] )
     else:
         alertresp = "Host Problem notification for %s" % payload['value'].split(';')[1]
         print("[%d] %s;2;1;0;%s;%s acknowledged via %s.\n" % (time.time(), payload['value'], body['user']['username'], body['user']['username'], body['channel']['name'] ), file=cmdfile)
-        print("[%d] %s;2;1;0;%s;%s acknowledged via #%s.\n" % (time.time(), payload['value'], body['user']['username'], body['user']['username'],body['channel']['name'] ))
+        logging.info("[%d] %s;2;1;0;%s;%s acknowledged via #%s", time.time(), payload['value'], body['user']['username'], body['user']['username'],body['channel']['name'] )
 
 # ack from Nagios
 def ack_message(data):
@@ -141,7 +151,7 @@ def ack_message(data):
         old_message_ts = problems['service'][data['service_problem_id']]['ts']
         old_message    = problems['service'][data['service_problem_id']]['text']
         channel = problems['service'][data['service_problem_id']]['channel']
-        print("Acked %s for %s on %s" % (data['service_problem_id'], data['service'], data['host']) )
+        logging.info("Acked %s for %s on %s", data['service_problem_id'], data['service'], data['host'])
     else:
         alertresp = "Host Problem notification for %s" % (data['host'])
         # recovery for a host has problem_id set to 0, so let's iterate and see if we have it.
@@ -156,7 +166,7 @@ def ack_message(data):
             old_message    = problems['host'][data['host_problem_id']]['text']
             channel = problems['host'][data['host_problem_id']]['channel']
 
-        print("Acked %s on %s" % (data['host_problem_id'], data['host']) )
+        logging.info("Acked %s on %s", data['host_problem_id'], data['host'])
 
     if data['type'] == 'RECOVERY' or data['type'] == 'OK' or data['type'] == 'UP':
         color = '#5cb85c'
@@ -204,7 +214,7 @@ except:
 @flask_app.route("/alertmsg", methods=["POST"])
 def slack_events():
     data = request.get_json(force=True)
-    print(json.dumps(data, indent=2))
+    logging.info("Received alert data:\n%s", json.dumps(data, indent=2))
     is_cached = False
 
     if data['type'] not in ['ACKNOWLEDGEMENT', 'RECOVERY']:
@@ -225,7 +235,7 @@ def slack_events():
         if 'service' in data:
             if data['service_problem_id'] not in problems['service']:
                 # send regular ack message since we dont have the problem in our cache
-                print("Could not find the error %s for %s on host %s in our cache, ignoring." % (data['service_problem_id'], data['service'], data['host']))
+                logging.warning("Could not find the error %s for %s on host %s in our cache, ignoring.", data['service_problem_id'], data['service'], data['host'])
                 message = app.client.chat_postMessage(channel=data['channel'], attachments=alert_message(data), text=" ")
             else:
                 is_cached = True
@@ -234,11 +244,11 @@ def slack_events():
             if data['host_problem_id'] == "0":
                 for problem_id in problems['host']:
                     if data['host'] == problems['host'][problem_id]['host']:
-                        print("found the host by iterating over all host in problems store: %s" % data['host'])
+                        logging.info("found the host by iterating over all host in problems store: %s", data['host'])
                         is_cached = True
             # send regular ack message if we don't have it cached
             elif data['host_problem_id'] not in problems['host']:
-                print("Could not find the error %s for host %s in our cache, ignoring." % (data['host_problem_id'], data['host']))
+                logging.warning("Could not find the error %s for host %s in our cache, ignoring.", data['host_problem_id'], data['host'])
                 message = app.client.chat_postMessage(channel=data['channel'], attachments=alert_message(data), text=" ")
             else:
                 is_cached = True
@@ -254,13 +264,10 @@ def slack_events():
     # print(json.dumps(problems, indent=2))
     return "ok\n"
 
-if __name__ == "__main__":
-    socket_mode_handler.connect()  # does not block the current thread
-    # Debug/Development
-    if debug:
-        flask_app.run(port=5005, debug=True)
-    else:
-        print("Starting webserver.")
-        http_server = WSGIServer(('', 5000), flask_app)
-        http_server.serve_forever()
+def run_socket_handler():
+    logging.info("Starting SocketModeHandler.")
+    socket_mode_handler.start()
 
+# Always start the Slack SocketModeHandler in a background thread,
+# regardless of whether this file is run directly or imported (e.g. under Gunicorn).
+threading.Thread(target=run_socket_handler, daemon=True).start()
