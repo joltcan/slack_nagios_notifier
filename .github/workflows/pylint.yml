@@ -1,0 +1,32 @@
+name: Test Slack Notifier
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -r requirements.txt
+          pip install flake8
+
+      - name: Lint with flake8
+        run: |
+          source .venv/bin/activate
+          flake8 slack_nagios.py
+
+      - name: Dummy Flask import check
+        run: |
+          source .venv/bin/activate
+          python -c "from slack_nagios import flask_app"
