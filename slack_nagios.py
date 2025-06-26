@@ -156,14 +156,25 @@ def ack_message_handler(body, ack, say, payload):
 
     # send acknowledgement to Nagios
     cmdfile = open(nagios_cmdfile, "a")
+    parts = payload['value'].split(';')
+    user = body['user']['username']
+    channel = body['channel']['name']
+
     if 'ACKNOWLEDGE_SVC_PROBLEM' in payload['value']:
-        alertresp = "Service Problem notification for %s on %s" % (payload['value'].split(';')[1], payload['value'].split(';')[2])
-        print("[%d] %s;2;1;0;%s;%s acknowledged via %s.\n" % (time.time(), payload['value'], body['user']['username'], body['user']['username'], body['channel']['name'] ), file=cmdfile)
-        logging.info("[%d] %s;2;1;0;%s;%s acknowledged via #%s", time.time(), payload['value'], body['user']['username'], body['user']['username'],body['channel']['name'] )
+        host = parts[1]
+        service = parts[2]
+        alertresp = f"Service Problem notification for {host} on {service}"
+        timestamp = int(time.time())
+        cmdfile.write(f"[{timestamp}] ACKNOWLEDGE_SVC_PROBLEM;{host};{service};2;1;0;{user};{user} acknowledged via {channel}\n")
+        cmdfile.flush()
+        logging.debug("Wrote to nagios.cmd: [%d] ACKNOWLEDGE_SVC_PROBLEM;%s;%s;2;1;0;%s;%s acknowledged via #%s", timestamp, host, service, user, user, channel)
     else:
-        alertresp = "Host Problem notification for %s" % payload['value'].split(';')[1]
-        print("[%d] %s;2;1;0;%s;%s acknowledged via %s.\n" % (time.time(), payload['value'], body['user']['username'], body['user']['username'], body['channel']['name'] ), file=cmdfile)
-        logging.info("[%d] %s;2;1;0;%s;%s acknowledged via #%s", time.time(), payload['value'], body['user']['username'], body['user']['username'],body['channel']['name'] )
+        host = parts[1]
+        alertresp = f"Host Problem notification for {host}"
+        timestamp = int(time.time())
+        cmdfile.write(f"[{timestamp}] ACKNOWLEDGE_HOST_PROBLEM;{host};2;1;0;{user};{user} acknowledged via {channel}\n")
+        cmdfile.flush()
+        logging.debug("Wrote to nagios.cmd: [%d] ACKNOWLEDGE_HOST_PROBLEM;%s;2;1;0;%s;%s acknowledged via #%s", timestamp, host, user, user, channel)
 
     # update original message color and remove button
     # find the channel and ts from stored problems
