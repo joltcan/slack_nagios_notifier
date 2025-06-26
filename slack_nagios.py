@@ -282,8 +282,8 @@ except:
 @flask_app.route("/alertmsg", methods=["POST"])
 def slack_events():
     data = request.get_json(force=True)
-    logging.info("Received alert: type=%s service=%s host_problem_id=%s service_problem_id=%s", data.get("type"), data.get("service"), data.get("host_problem_id", "-"), data.get("service_problem_id", "-"))
-    logging.debug("Full alert payload: %s", json.dumps(data, indent=2))
+    logging.info("Received event type=%s service=%s host_problem_id=%s service_problem_id=%s", data.get("type"), data.get("service"), data.get("host_problem_id", "-"), data.get("service_problem_id", "-"))
+    logging.debug("Full event payload: %s", json.dumps(data, indent=2))
     is_cached = False
 
     if data['type'] not in ['ACKNOWLEDGEMENT', 'RECOVERY']:
@@ -333,6 +333,9 @@ def slack_events():
                 message = app.client.chat_postMessage(channel=data['channel'], attachments=alert_message(data), text=" ")
             else:
                 is_cached = True
+
+        if data['type'] == 'ACKNOWLEDGEMENT' and is_cached:
+            return "ok\n"
 
         if is_cached and data['type'] != 'RECOVERY':
             logging.debug("Cached alert: %s", json.dumps(data, indent=2))
