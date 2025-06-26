@@ -1,0 +1,5 @@
+[MESSAGES CONTROL]
+disable=C0301  ; line too long
+disable=W1203  ; lazy formatting
+[FORMAT]
+max-line-length=120

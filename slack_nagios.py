@@ -10,13 +10,10 @@ from dotenv import load_dotenv
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_bolt.adapter.flask import SlackRequestHandler
-from gevent.pywsgi import WSGIServer
-from flask import Flask, make_response, request
+from flask import Flask, request
 
 # ignore slack warnings about text not being sent
 warnings.filterwarnings("ignore", category=UserWarning)
-
-# setup flask for non-slack routes
 
 load_dotenv()
 NAGIOS_URL = os.getenv("NAGIOS_URL", "https://nagios.example.com/nagios4/")
@@ -44,15 +41,16 @@ flask_app = Flask(__name__)
 
 socket_mode_handler = SocketModeHandler(app, SLACK_APP_TOKEN)
 
+
 def alert_message(data):
     state = data['state']
 
     # use the bootstrap palette
     # https://www.color-hex.com/color-palette/5452
-    if state == "CRITICAL" or state == 'DOWN':
+    if state in ("CRITICAL", "DOWN"):
         color = '#d9534f'
         add_ack = True
-    elif state == "OK" or state == "UP" or state == "RECOVERY":
+    elif state in ("OK", "UP", "RECOVERY"):
         color = '#5cb85c'
         add_ack = False
     elif state == "WARNING":
@@ -107,45 +105,45 @@ State:\t\t\t{state}
         value_data = "ACKNOWLEDGE_HOST_PROBLEM;{host}".format(host=data['host'])
 
     response = [
-            {
-                "color": color,
-                "blocks": [
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": notification_message
-                        }
-                    },
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": "*Check Output*\n{info}".format(info=data['info'])
-                        }
-                    },
-                ],
-                "fallback": notification_message
-            }
-        ]
+        {
+            "color": color,
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": notification_message
+                    }
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "*Check Output*\n{info}".format(info=data['info'])
+                    }
+                },
+            ],
+            "fallback": notification_message
+        }
+    ]
 
     if add_ack:
         ackbutton = {
-                        "type": "actions",
-                        "elements": [{
-                            "type": "button",
-                            "text": {
-                                "type": "plain_text",
-                                "text": "Acknowledge",
-                            },
-                            "value": value_data,
-                            "action_id": "ack_message"
-                            }
-                        ]
-                    }
+            "type": "actions",
+            "elements": [{
+                "type": "button",
+                "text": {
+                    "type": "plain_text",
+                    "text": "Acknowledge",
+                },
+                "value": value_data,
+                "action_id": "ack_message"
+            }]
+        }
         response[0]['blocks'].append(ackbutton)
 
     return response
+
 
 # ack via slack
 # original message will be updated via nagios with ack_message
@@ -163,14 +161,12 @@ def ack_message_handler(body, ack, say, payload):
     if 'ACKNOWLEDGE_SVC_PROBLEM' in payload['value']:
         host = parts[1]
         service = parts[2]
-        alertresp = f"Service Problem notification for {host} on {service}"
         timestamp = int(time.time())
         cmdfile.write(f"[{timestamp}] ACKNOWLEDGE_SVC_PROBLEM;{host};{service};2;1;0;{user};{user} acknowledged via {channel}\n")
         cmdfile.flush()
         logging.debug("Wrote to nagios.cmd: [%d] ACKNOWLEDGE_SVC_PROBLEM;%s;%s;2;1;0;%s;%s acknowledged via #%s", timestamp, host, service, user, user, channel)
     else:
         host = parts[1]
-        alertresp = f"Host Problem notification for {host}"
         timestamp = int(time.time())
         cmdfile.write(f"[{timestamp}] ACKNOWLEDGE_HOST_PROBLEM;{host};2;1;0;{user};{user} acknowledged via {channel}\n")
         cmdfile.flush()
@@ -204,7 +200,6 @@ def ack_message_handler(body, ack, say, payload):
             ts = problems['service'][problem_id]['ts']
         else:
             ts = problems['host'][problem_id]['ts']
-
 
         # Update the original message: change color and remove button by sending a new message with acked=True
         # Reconstruct data dictionary for alert_message with acked=True
@@ -241,6 +236,7 @@ def ack_message_handler(body, ack, say, payload):
         except Exception as e:
             logging.error("Failed to update message after ack: %s", e)
 
+
 # ack from Nagios
 def ack_message(data):
     if 'service' in data:
@@ -254,30 +250,31 @@ def ack_message(data):
         color = '#428bca'
 
     updated_message = [
-            {
-                "color": color,
-                "blocks": [
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": f"{data['author']} acknowledged alert _\"{alertresp}\"_, {data['comment']}"
-                        }
+        {
+            "color": color,
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"{data['author']} acknowledged alert _\"{alertresp}\"_, {data['comment']}"
                     }
-                ],
-                "fallback": alertresp
-            }]
+                }
+            ],
+            "fallback": alertresp
+        }
+    ]
 
     return updated_message
 
+
 # Be able to send messages from Flask
-
-
 try:
     with open(problems_file, 'wb') as f:
-        problems = json.load( open(problems_file) )
-except: 
-    problems = { "service":{}, "host":{} }
+        problems = json.load(open(problems_file))
+except Exception:
+    problems = {"service": {}, "host": {}}
+
 
 @flask_app.route("/alertmsg", methods=["POST"])
 def slack_events():
@@ -366,9 +363,11 @@ def slack_events():
     # print(json.dumps(problems, indent=2))
     return "ok\n"
 
+
 def run_socket_handler():
     logging.info("Starting SocketModeHandler.")
     socket_mode_handler.start()
+
 
 # Always start the Slack SocketModeHandler in a background thread,
 # regardless of whether this file is run directly or imported (e.g. under Gunicorn).

@@ -4,7 +4,7 @@
 
 Checkout this repo into nagios dir:
 
-`git clone https://github.com/joltcan/slack_nagios_notifier.git /var/lib/nagios/slack_notifier/``
+`git clone https://github.com/joltcan/slack_nagios_notifier.git /var/lib/nagios/slack_notifier/`
 
 Create venv:
 
