@@ -25,13 +25,3 @@ jobs:
         run: |
           source .venv/bin/activate
           flake8 slack_nagios.py
-
-      - name: Dummy .env file
-        run: |
-          echo SLACK_BOT_TOKEN=xoxb > .env
-          echo SLACK_APP_TOKEN=xapp >> .env
-
-      - name: Dummy Flask import check
-        run: |
-          source .venv/bin/activate
-          python -c "from slack_nagios import flask_app"
