@@ -14,11 +14,12 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Add tokens to .env file:
+Add tokens and URL to .env file:
 
 ```bash
 SLACK_BOT_TOKEN=xoxb-
 SLACK_APP_TOKEN=xapp-
+NAGIOS_URL=https://nagios.example.com/nagios4/
 ```
 
 # Run in shell
